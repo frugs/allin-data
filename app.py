@@ -1,23 +1,37 @@
 import bisect
+import copy
 import os
-import json
-from bottle import route, run
+import threading
+import typing
 import sc2gamedata
+from bottle import route, run
 
 _ACCESS_TOKEN = os.getenv('BATTLE_NET_ACCESS_TOKEN', "")
+_REFRESH_INTERVAL = 30
 
 
-def get_leaderboard() -> list:
-    game_data = sc2gamedata.download_ladder_data(_ACCESS_TOKEN)
+class RepeatingTaskScheduler:
 
+    def __init__(self, task: typing.Callable[[], None]):
+        self.active_timer = None
+        self.timer_lock = threading.Lock()
+        self.task = task
+
+    def schedule(self, delay: int):
+        self.timer_lock.acquire()
+        if not self.active_timer or not self.active_timer.is_alive():
+            self.active_timer = threading.Timer(delay, self.task)
+            self.active_timer.start()
+        self.timer_lock.release()
+
+
+def _create_leaderboard(game_data):
     all_mmrs = sorted([team['rating'] for team in game_data.teams()])
-
     clan_members = [
         team
         for team
         in game_data.teams()
         if "clan_link" in team["member"][0] and team["member"][0]["clan_link"]["clan_name"] == "All Inspiration"]
-
     sorted_clan_members = sorted(clan_members, key=lambda team: team['rating'], reverse=True)
 
     def extract_battle_tag(team):
@@ -42,10 +56,34 @@ def get_leaderboard() -> list:
          "percentile": pretty_percentile(extract_percentile(team))}
         for team in sorted_clan_members]
 
+_cache_lock = threading.Lock()
+_leaderboard_cache = _create_leaderboard(sc2gamedata.download_ladder_data(_ACCESS_TOKEN))
+
+
+def _refresh_cache():
+    global _leaderboard_cache
+
+    print("updating cache")
+    leaderboard = _create_leaderboard(sc2gamedata.download_ladder_data(_ACCESS_TOKEN))
+
+    _cache_lock.acquire()
+    _leaderboard_cache = leaderboard
+    _cache_lock.release()
+    print("cache_updated")
+
+_repeating_task_scheduler = RepeatingTaskScheduler(_refresh_cache)
+
 
 @route('/')
-def hello():
-    return {"data": get_leaderboard()}
+def display_leaderboard():
+    _repeating_task_scheduler.schedule(_REFRESH_INTERVAL)
+    global _leaderboard_cache
+
+    _cache_lock.acquire()
+    leaderboard = copy.deepcopy(_leaderboard_cache)
+    _cache_lock.release()
+
+    return {"data": leaderboard}
 
 
 if __name__ == "__main__":
