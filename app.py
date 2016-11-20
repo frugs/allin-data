@@ -3,11 +3,14 @@ import copy
 import os
 import threading
 import typing
+import multiprocessing
+import itertools
 import sc2gamedata
 from bottle import route, run
 
 _ACCESS_TOKEN = os.getenv('BATTLE_NET_ACCESS_TOKEN', "")
 _REFRESH_INTERVAL = 30
+_LEAGUE_COUNT = 6
 
 
 class RepeatingTaskScheduler:
@@ -25,14 +28,36 @@ class RepeatingTaskScheduler:
         self.timer_lock.release()
 
 
-def _create_leaderboard(game_data):
-    all_mmrs = sorted([team['rating'] for team in game_data.teams()])
-    clan_members = [
-        team
-        for team
-        in game_data.teams()
-        if "clan_link" in team["member"][0] and team["member"][0]["clan_link"]["clan_name"] == "All Inspiration"]
-    sorted_clan_members = sorted(clan_members, key=lambda team: team['rating'], reverse=True)
+def _for_each_league(current_season_id: int, league_id: int):
+    league_mmrs = []
+    clan_teams = []
+
+    league_data = sc2gamedata.get_league_data(_ACCESS_TOKEN, current_season_id, league_id)
+    for tier_index, tier_data in enumerate(reversed(league_data["tier"])):
+        tier_id = tier_index + league_id
+        for division_data in tier_data["division"]:
+            ladder_data = sc2gamedata.get_ladder_data(_ACCESS_TOKEN, division_data["ladder_id"])
+            if "team" in ladder_data:
+                for team_data in ladder_data["team"]:
+                    league_mmrs.append(team_data["rating"])
+
+                    if "clan_link" in team_data["member"][0] and team_data["member"][0]["clan_link"]["clan_name"] == "All Inspiration":
+                        team_data["tier_id"] = tier_id
+                        clan_teams.append(team_data)
+
+    return clan_teams, league_mmrs
+
+
+def _create_leaderboard():
+    season_id = sc2gamedata.get_current_season_data(_ACCESS_TOKEN)["id"]
+    league_ids = range(_LEAGUE_COUNT)
+
+    with multiprocessing.Pool(_LEAGUE_COUNT) as p:
+        result = p.starmap(_for_each_league, zip([season_id] * _LEAGUE_COUNT, league_ids))
+
+    clan_members_by_league, all_mmrs_by_league = map(list, zip(*result))
+    all_mmrs = sorted(list(itertools.chain.from_iterable(all_mmrs_by_league)))
+    clan_members = sorted(list(itertools.chain.from_iterable(clan_members_by_league)), key=lambda team: team['rating'], reverse=True)
 
     def extract_battle_tag(team):
         if "character_link" in team["member"][0]:
@@ -54,17 +79,17 @@ def _create_leaderboard(game_data):
          "race": extract_race(team),
          "mmr": team["rating"],
          "percentile": pretty_percentile(extract_percentile(team))}
-        for team in sorted_clan_members]
+        for team in clan_members]
 
 _cache_lock = threading.Lock()
-_leaderboard_cache = _create_leaderboard(sc2gamedata.download_ladder_data(_ACCESS_TOKEN))
+_leaderboard_cache = None
 
 
 def _refresh_cache():
     global _leaderboard_cache
 
     print("updating cache")
-    leaderboard = _create_leaderboard(sc2gamedata.download_ladder_data(_ACCESS_TOKEN))
+    leaderboard = _create_leaderboard()
 
     _cache_lock.acquire()
     _leaderboard_cache = leaderboard
@@ -87,5 +112,6 @@ def display_leaderboard():
 
 
 if __name__ == "__main__":
+    _refresh_cache()
     port = os.getenv('ALLIN_DATA_PORT', 9007)
     run(host='localhost', port=port, debug=True)
