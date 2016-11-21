@@ -77,6 +77,7 @@ def _create_leaderboard():
     return [
         {"battle_tag": extract_battle_tag(team),
          "race": extract_race(team),
+         "tier": team["tier_id"],
          "mmr": team["rating"],
          "percentile": pretty_percentile(extract_percentile(team))}
         for team in clan_members]
