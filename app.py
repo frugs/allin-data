@@ -34,7 +34,7 @@ def _for_each_league(current_season_id: int, league_id: int):
 
     league_data = sc2gamedata.get_league_data(_ACCESS_TOKEN, current_season_id, league_id)
     for tier_index, tier_data in enumerate(reversed(league_data["tier"])):
-        tier_id = tier_index + league_id
+        tier_id = (league_id * 3) + tier_index
         for division_data in tier_data["division"]:
             ladder_data = sc2gamedata.get_ladder_data(_ACCESS_TOKEN, division_data["ladder_id"])
             if "team" in ladder_data:
