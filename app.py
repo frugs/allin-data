@@ -31,10 +31,12 @@ class RepeatingTaskScheduler:
 def _for_each_league(current_season_id: int, league_id: int):
     league_mmrs = []
     clan_teams = []
+    tier_boundaries = []
 
     league_data = sc2gamedata.get_league_data(_ACCESS_TOKEN, current_season_id, league_id)
     for tier_index, tier_data in enumerate(reversed(league_data["tier"])):
         tier_id = (league_id * 3) + tier_index
+        tier_boundaries.append({"type": "boundary", "tier_id": tier_id, "min_rating": tier_data["min_rating"]})
         for division_data in tier_data["division"]:
             ladder_data = sc2gamedata.get_ladder_data(_ACCESS_TOKEN, division_data["ladder_id"])
             if "team" in ladder_data:
@@ -42,10 +44,11 @@ def _for_each_league(current_season_id: int, league_id: int):
                     league_mmrs.append(team_data["rating"])
 
                     if "clan_link" in team_data["member"][0] and team_data["member"][0]["clan_link"]["clan_name"] == "All Inspiration":
+                        team_data["type"] = "player"
                         team_data["tier_id"] = tier_id
                         clan_teams.append(team_data)
 
-    return clan_teams, league_mmrs
+    return clan_teams, league_mmrs, tier_boundaries
 
 
 def _create_leaderboard():
@@ -55,9 +58,10 @@ def _create_leaderboard():
     with multiprocessing.Pool(_LEAGUE_COUNT) as p:
         result = p.starmap(_for_each_league, zip([season_id] * _LEAGUE_COUNT, league_ids))
 
-    clan_members_by_league, all_mmrs_by_league = map(list, zip(*result))
+    clan_members_by_league, all_mmrs_by_league, tier_boundaries_by_league = map(list, zip(*result))
     all_mmrs = sorted(list(itertools.chain.from_iterable(all_mmrs_by_league)))
     clan_members = sorted(list(itertools.chain.from_iterable(clan_members_by_league)), key=lambda team: team['rating'], reverse=True)
+    tier_boundaries = sorted(list(itertools.chain.from_iterable(tier_boundaries_by_league)), key=lambda boundary: boundary['min_rating'], reverse=True)
 
     def extract_battle_tag(team):
         if "character_link" in team["member"][0]:
@@ -74,13 +78,21 @@ def _create_leaderboard():
     def pretty_percentile(percentile):
         return "{0:.2f}%".format(percentile * 100)
 
-    return [
-        {"battle_tag": extract_battle_tag(team),
-         "race": extract_race(team),
-         "tier": team["tier_id"],
-         "mmr": team["rating"],
-         "percentile": pretty_percentile(extract_percentile(team))}
-        for team in clan_members]
+    result = []
+
+    for clan_member in clan_members:
+        if tier_boundaries and clan_member["rating"] < tier_boundaries[0]["min_rating"]:
+            boundary = tier_boundaries.pop(0)
+            result.append({"type": "boundary", "tier": boundary["tier_id"], "mmr": boundary["min_rating"]})
+        result.append({
+            "type": clan_member["type"],
+            "battle_tag": extract_battle_tag(clan_member),
+            "race": extract_race(clan_member),
+            "tier": clan_member["tier_id"],
+            "mmr": clan_member["rating"],
+            "percentile": pretty_percentile(extract_percentile(clan_member))})
+
+    return result
 
 _cache_lock = threading.Lock()
 _leaderboard_cache = None
