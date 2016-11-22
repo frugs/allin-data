@@ -44,7 +44,6 @@ def _for_each_league(current_season_id: int, league_id: int):
                     league_mmrs.append(team_data["rating"])
 
                     if "clan_link" in team_data["member"][0] and team_data["member"][0]["clan_link"]["clan_name"] == "All Inspiration":
-                        team_data["type"] = "player"
                         team_data["tier_id"] = tier_id
                         clan_teams.append(team_data)
 
@@ -81,11 +80,11 @@ def _create_leaderboard():
     result = []
 
     for clan_member in clan_members:
-        if tier_boundaries and clan_member["rating"] < tier_boundaries[0]["min_rating"]:
+        while tier_boundaries and clan_member["rating"] < tier_boundaries[0]["min_rating"]:
             boundary = tier_boundaries.pop(0)
             result.append({"type": "boundary", "tier": boundary["tier_id"], "mmr": boundary["min_rating"]})
         result.append({
-            "type": clan_member["type"],
+            "type": "player",
             "battle_tag": extract_battle_tag(clan_member),
             "race": extract_race(clan_member),
             "tier": clan_member["tier_id"],
