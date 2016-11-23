@@ -31,12 +31,12 @@ class RepeatingTaskScheduler:
 def _for_each_league(current_season_id: int, league_id: int):
     league_mmrs = []
     clan_teams = []
-    tier_boundaries = []
+    tiers = []
 
     league_data = sc2gamedata.get_league_data(_ACCESS_TOKEN, current_season_id, league_id)
     for tier_index, tier_data in enumerate(reversed(league_data["tier"])):
         tier_id = (league_id * 3) + tier_index
-        tier_boundaries.append({"type": "boundary", "tier_id": tier_id, "min_rating": tier_data["min_rating"]})
+        tiers.append({"tier_id": tier_id, "tier_data": tier_data})
         for division_data in tier_data["division"]:
             ladder_data = sc2gamedata.get_ladder_data(_ACCESS_TOKEN, division_data["ladder_id"])
             if "team" in ladder_data:
@@ -47,7 +47,7 @@ def _for_each_league(current_season_id: int, league_id: int):
                         team_data["tier_id"] = tier_id
                         clan_teams.append(team_data)
 
-    return clan_teams, league_mmrs, tier_boundaries
+    return clan_teams, league_mmrs, tiers
 
 
 def _create_leaderboard():
@@ -57,10 +57,13 @@ def _create_leaderboard():
     with multiprocessing.Pool(_LEAGUE_COUNT) as p:
         result = p.starmap(_for_each_league, zip([season_id] * _LEAGUE_COUNT, league_ids))
 
-    clan_members_by_league, all_mmrs_by_league, tier_boundaries_by_league = map(list, zip(*result))
-    all_mmrs = sorted(list(itertools.chain.from_iterable(all_mmrs_by_league)))
-    clan_members = sorted(list(itertools.chain.from_iterable(clan_members_by_league)), key=lambda team: team['rating'], reverse=True)
-    tier_boundaries = sorted(list(itertools.chain.from_iterable(tier_boundaries_by_league)), key=lambda boundary: boundary['min_rating'], reverse=True)
+    clan_members_by_league, all_mmrs_by_league, tiers_by_league = map(list, zip(*result))
+    all_mmrs = sorted(list(
+        itertools.chain.from_iterable(all_mmrs_by_league)))
+    clan_members = sorted(list(
+        itertools.chain.from_iterable(clan_members_by_league)), key=lambda team: team['rating'], reverse=True)
+    tiers = sorted(list(
+        itertools.chain.from_iterable(tiers_by_league)), key=lambda tier: tier['tier_id'], reverse=True)
 
     def extract_battle_tag(team):
         if "character_link" in team["member"][0]:
@@ -78,11 +81,13 @@ def _create_leaderboard():
         return "{0:.2f}%".format(percentile * 100)
 
     result = []
-
     for clan_member in clan_members:
-        while tier_boundaries and clan_member["rating"] < tier_boundaries[0]["min_rating"]:
-            boundary = tier_boundaries.pop(0)
-            result.append({"type": "boundary", "tier": boundary["tier_id"], "mmr": boundary["min_rating"]})
+        while tiers and clan_member["rating"] < tiers[0]["tier_data"]["max_rating"]:
+            tier = tiers.pop(0)
+            result.append({"type": "boundary",
+                           "tier": tier["tier_id"],
+                           "min_mmr": tier["tier_data"]["min_rating"],
+                           "max_mmr": tier["tier_data"]["max_rating"]})
         result.append({
             "type": "player",
             "battle_tag": extract_battle_tag(clan_member),
