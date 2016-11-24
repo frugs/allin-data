@@ -12,6 +12,11 @@ _ACCESS_TOKEN = os.getenv('BATTLE_NET_ACCESS_TOKEN', "")
 _REFRESH_INTERVAL = 30
 _LEAGUE_COUNT = 6
 
+_GUESTS = [
+    "Warmachine#1636",
+    "Tbbdd#6920"
+]
+
 
 class RepeatingTaskScheduler:
 
@@ -42,8 +47,9 @@ def _for_each_league(current_season_id: int, league_id: int):
             if "team" in ladder_data:
                 for team_data in ladder_data["team"]:
                     league_mmrs.append(team_data["rating"])
-
-                    if "clan_link" in team_data["member"][0] and team_data["member"][0]["clan_link"]["clan_name"] == "All Inspiration":
+                    member_data = team_data["member"][0]
+                    if ("clan_link" in member_data and member_data["clan_link"]["clan_name"] == "All Inspiration")\
+                            or "character_link" in member_data and member_data["character_link"]["battle_tag"] in _GUESTS:
                         team_data["tier_id"] = tier_id
                         clan_teams.append(team_data)
 
