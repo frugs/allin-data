@@ -14,7 +14,9 @@ _LEAGUE_COUNT = 6
 
 _GUESTS = [
     "Warmachine#1636",
-    "Tbbdd#6920"
+    "Tbbdd#6920",
+    "taylorqt#1543",
+    "Nechabo#1191"
 ]
 
 
