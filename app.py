@@ -5,7 +5,9 @@ import threading
 import typing
 import multiprocessing
 import itertools
+import pickle
 import sc2gamedata
+import pyrebase
 from bottle import route, run
 
 _ACCESS_TOKEN = os.getenv('BATTLE_NET_ACCESS_TOKEN', "")
@@ -16,7 +18,8 @@ _GUESTS = [
     "Warmachine#1636",
     "Tbbdd#6920",
     "taylorqt#1543",
-    "Nechabo#1191"
+    "Nechabo#1191",
+    "DeadLyDoSe#1705"
 ]
 
 
@@ -58,6 +61,12 @@ def _for_each_league(current_season_id: int, league_id: int):
     return clan_teams, league_mmrs, tiers
 
 
+def open_db() -> pyrebase.pyrebase.Database:
+    with open("firebase.cfg", "rb") as file:
+        db_config = pickle.load(file)
+
+    return pyrebase.initialize_app(db_config).database()
+
 def _create_leaderboard():
     season_id = sc2gamedata.get_current_season_data(_ACCESS_TOKEN)["id"]
     league_ids = range(_LEAGUE_COUNT)
@@ -73,11 +82,25 @@ def _create_leaderboard():
     tiers = sorted(list(
         itertools.chain.from_iterable(tiers_by_league)), key=lambda tier: tier['tier_id'], reverse=True)
 
-    def extract_battle_tag(team):
+    db = open_db()
+
+    def extract_name(team):
         if "character_link" in team["member"][0]:
-            return team["member"][0]["character_link"]["battle_tag"]
+            battle_tag = team["member"][0]["character_link"]["battle_tag"]
         else:
             return "UNKNOWN"
+
+        try:
+            query_result = db.child("members").order_by_child("caseless_battle_tag").equal_to(battle_tag.casefold()).get()
+            if not query_result.pyres:
+                return battle_tag
+
+            result_data = next(iter(query_result.val().values()))
+            return result_data.get("discord_server_nick", result_data.get("discord_display_name", battle_tag))
+
+        except Exception as e:
+            print(e)
+            return battle_tag
 
     def extract_race(team):
         return team["member"][0]["played_race_count"][0]["race"]["en_US"]
@@ -96,13 +119,15 @@ def _create_leaderboard():
                            "tier": tier["tier_id"],
                            "min_mmr": tier["tier_data"]["min_rating"],
                            "max_mmr": tier["tier_data"]["max_rating"]})
-        result.append({
+        data = {
             "type": "player",
-            "battle_tag": extract_battle_tag(clan_member),
+            "name": extract_name(clan_member),
             "race": extract_race(clan_member),
             "tier": clan_member["tier_id"],
             "mmr": clan_member["rating"],
-            "percentile": pretty_percentile(extract_percentile(clan_member))})
+            "percentile": pretty_percentile(extract_percentile(clan_member))
+        }
+        result.append(data)
 
     return result
 
