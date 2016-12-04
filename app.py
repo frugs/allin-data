@@ -6,6 +6,7 @@ import typing
 import multiprocessing
 import itertools
 import pickle
+import retryget
 import sc2gamedata
 import pyrebase
 from bottle import route, run
@@ -67,6 +68,7 @@ def open_db() -> pyrebase.pyrebase.Database:
 
     return pyrebase.initialize_app(db_config).database()
 
+
 def _create_leaderboard():
     season_id = sc2gamedata.get_current_season_data(_ACCESS_TOKEN)["id"]
     league_ids = range(_LEAGUE_COUNT)
@@ -82,8 +84,6 @@ def _create_leaderboard():
     tiers = sorted(list(
         itertools.chain.from_iterable(tiers_by_league)), key=lambda tier: tier['tier_id'], reverse=True)
 
-    db = open_db()
-
     def extract_name(team):
         if "character_link" in team["member"][0]:
             battle_tag = team["member"][0]["character_link"]["battle_tag"]
@@ -91,7 +91,9 @@ def _create_leaderboard():
             return "UNKNOWN"
 
         try:
-            query_result = db.child("members").order_by_child("caseless_battle_tag").equal_to(battle_tag.casefold()).get()
+            db = open_db()
+            query = db.child("members").order_by_child("caseless_battle_tag").equal_to(battle_tag.casefold())
+            query_result = retryget.get_with_retry(query, 10, pyrebase.pyrebase.PyreResponse([], ""))
             if not query_result.pyres:
                 return battle_tag
 
