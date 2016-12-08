@@ -1,5 +1,5 @@
-bottle
+growler
 sc2gamedata
-retryget
+retryfallback
 pyrebase
 

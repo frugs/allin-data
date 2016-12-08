@@ -1,15 +1,15 @@
 import bisect
-import copy
 import os
 import threading
 import typing
 import multiprocessing
 import itertools
 import pickle
-import retryget
+import asyncio
+import retryfallback
 import sc2gamedata
 import pyrebase
-from bottle import route, run
+import growler
 
 _ACCESS_TOKEN = os.getenv('BATTLE_NET_ACCESS_TOKEN', "")
 _REFRESH_INTERVAL = 30
@@ -90,19 +90,17 @@ def _create_leaderboard():
         else:
             return "UNKNOWN"
 
-        try:
-            db = open_db()
-            query = db.child("members").order_by_child("caseless_battle_tag").equal_to(battle_tag.casefold())
-            query_result = retryget.get_with_retry(query, 10, pyrebase.pyrebase.PyreResponse([], ""))
-            if not query_result.pyres:
-                return battle_tag
-
-            result_data = next(iter(query_result.val().values()))
-            return result_data.get("discord_server_nick", result_data.get("discord_display_name", battle_tag))
-
-        except Exception as e:
-            print(e)
+        db = retryfallback.retry_callable(open_db, 10, None)
+        if not db:
             return battle_tag
+
+        query = db.child("members").order_by_child("caseless_battle_tag").equal_to(battle_tag.casefold())
+        query_result = retryfallback.retry_callable(query.get, 10, pyrebase.pyrebase.PyreResponse([], ""))
+        if not query_result.pyres:
+            return battle_tag
+
+        result_data = next(iter(query_result.val().values()))
+        return result_data.get("discord_server_nick", result_data.get("discord_display_name", battle_tag))
 
     def extract_race(team):
         return team["member"][0]["played_race_count"][0]["race"]["en_US"]
@@ -133,37 +131,42 @@ def _create_leaderboard():
 
     return result
 
-_cache_lock = threading.Lock()
-_leaderboard_cache = None
+print("initialising leaderboard")
+_leaderboard_cache = _create_leaderboard()
+_is_cache_update_scheduled = False
 
 
-def _refresh_cache():
+async def _refresh_cache():
     global _leaderboard_cache
+    global _is_cache_update_scheduled
+
+    await asyncio.sleep(_REFRESH_INTERVAL)
 
     print("updating cache")
-    leaderboard = _create_leaderboard()
-
-    _cache_lock.acquire()
-    _leaderboard_cache = leaderboard
-    _cache_lock.release()
+    _leaderboard_cache = await asyncio.get_event_loop().run_in_executor(None, _create_leaderboard)
     print("cache_updated")
 
-_repeating_task_scheduler = RepeatingTaskScheduler(_refresh_cache)
+    _is_cache_update_scheduled = False
 
 
-@route('/')
-def display_leaderboard():
-    _repeating_task_scheduler.schedule(_REFRESH_INTERVAL)
+web_app = growler.App('allinbot_controller')
+
+
+@web_app.get('/')
+def display_leaderboard(req, res):
     global _leaderboard_cache
+    global _is_cache_update_scheduled
 
-    _cache_lock.acquire()
-    leaderboard = copy.deepcopy(_leaderboard_cache)
-    _cache_lock.release()
+    if not _is_cache_update_scheduled:
+        _is_cache_update_scheduled = True
 
-    return {"data": leaderboard}
+        print("cache update scheduled")
+        asyncio.ensure_future(_refresh_cache())
 
+    res.send_json({"data": _leaderboard_cache})
 
 if __name__ == "__main__":
-    _refresh_cache()
+    print("starting web server")
     port = os.getenv('ALLIN_DATA_PORT', 9007)
-    run(host='localhost', port=port, debug=True)
+    asyncio.Server = web_app.create_server(port=port)
+    asyncio.get_event_loop().run_forever()
