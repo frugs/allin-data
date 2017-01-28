@@ -144,8 +144,13 @@ async def _refresh_cache():
     await asyncio.sleep(_REFRESH_INTERVAL)
 
     print("updating cache")
-    _leaderboard_cache = await asyncio.get_event_loop().run_in_executor(None, _create_leaderboard)
-    print("cache_updated")
+    try:
+        _leaderboard_cache = await asyncio.get_event_loop().run_in_executor(None, _create_leaderboard)
+        print("cache_updated")
+    except Exception as e:
+        print(str(e))
+        print("cache update failed")
+        pass
 
     _is_cache_update_scheduled = False
 
