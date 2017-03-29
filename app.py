@@ -13,7 +13,7 @@ import growler
 
 _ACCESS_TOKEN = os.getenv('BATTLE_NET_ACCESS_TOKEN', "")
 _REFRESH_INTERVAL = 30
-_LEAGUE_COUNT = 6
+_LEAGUE_COUNT = 7
 
 _GUESTS = [
     "Tbbdd#6920",
@@ -22,7 +22,8 @@ _GUESTS = [
     "eXiled#1678",
     "IMeXiled#1893",
     "Matlo#1298",
-    "Luneth#11496"
+    "Luneth#11496",
+    "Andy#12473"
 ]
 
 
@@ -114,6 +115,12 @@ def _create_leaderboard():
         return "{0:.2f}%".format(percentile * 100)
 
     result = []
+
+    # Handle grandmaster league
+    grandmaster = tiers.pop(0)
+    result.append({"type": "boundary",
+                   "tier": grandmaster["tier_id"]})
+
     for clan_member in clan_members:
         while tiers and clan_member["rating"] < tiers[0]["tier_data"]["max_rating"]:
             tier = tiers.pop(0)
