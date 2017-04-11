@@ -6,12 +6,14 @@ import multiprocessing
 import itertools
 import pickle
 import asyncio
+import functools
 import retryfallback
 import sc2gamedata
 import pyrebase
 import growler
 
-_ACCESS_TOKEN = os.getenv('BATTLE_NET_ACCESS_TOKEN', "")
+_CLIENT_ID = os.getenv('BATTLE_NET_CLIENT_ID', "")
+_CLIENT_SECRET = os.getenv('BATTLE_NET_CLIENT_SECRET', "")
 _REFRESH_INTERVAL = 30
 _LEAGUE_COUNT = 7
 
@@ -47,17 +49,17 @@ class RepeatingTaskScheduler:
         self.timer_lock.release()
 
 
-def _for_each_league(current_season_id: int, league_id: int):
+def _for_each_league(access_token: str, current_season_id: int, league_id: int):
     league_mmrs = []
     clan_teams = []
     tiers = []
 
-    league_data = sc2gamedata.get_league_data(_ACCESS_TOKEN, current_season_id, league_id)
+    league_data = sc2gamedata.get_league_data(access_token, current_season_id, league_id)
     for tier_index, tier_data in enumerate(reversed(league_data["tier"])):
         tier_id = (league_id * 3) + tier_index
         tiers.append({"tier_id": tier_id, "tier_data": tier_data})
         for division_data in tier_data["division"]:
-            ladder_data = sc2gamedata.get_ladder_data(_ACCESS_TOKEN, division_data["ladder_id"])
+            ladder_data = sc2gamedata.get_ladder_data(access_token, division_data["ladder_id"])
             if "team" in ladder_data:
                 for team_data in ladder_data["team"]:
                     league_mmrs.append(team_data["rating"])
@@ -78,11 +80,12 @@ def open_db() -> pyrebase.pyrebase.Database:
 
 
 def _create_leaderboard():
-    season_id = sc2gamedata.get_current_season_data(_ACCESS_TOKEN)["id"]
+    access_token, _ = sc2gamedata.get_access_token(_CLIENT_ID, _CLIENT_SECRET, "us")
+    season_id = sc2gamedata.get_current_season_data(access_token)["id"]
     league_ids = range(_LEAGUE_COUNT)
 
     with multiprocessing.Pool(_LEAGUE_COUNT) as p:
-        result = p.starmap(_for_each_league, zip([season_id] * _LEAGUE_COUNT, league_ids))
+        result = p.starmap(functools.partial(_for_each_league, access_token), zip([season_id] * _LEAGUE_COUNT, league_ids))
 
     clan_members_by_league, all_mmrs_by_league, tiers_by_league = map(list, zip(*result))
     all_mmrs = sorted(list(
