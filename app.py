@@ -63,11 +63,13 @@ def _for_each_league(access_token: str, current_season_id: int, league_id: int):
             if "team" in ladder_data:
                 for team_data in ladder_data["team"]:
                     league_mmrs.append(team_data["rating"])
-                    member_data = team_data["member"][0]
-                    if ("clan_link" in member_data and member_data["clan_link"]["id"] in _CLAN_IDS)\
-                            or "character_link" in member_data and member_data["character_link"]["battle_tag"] in _GUESTS:
-                        team_data["tier_id"] = tier_id
-                        clan_teams.append(team_data)
+
+                    if "member" in team_data:
+                        member_data = team_data["member"][0]
+                        if ("clan_link" in member_data and member_data["clan_link"]["id"] in _CLAN_IDS)\
+                                or "character_link" in member_data and member_data["character_link"]["battle_tag"] in _GUESTS:
+                            team_data["tier_id"] = tier_id
+                            clan_teams.append(team_data)
 
     return clan_teams, league_mmrs, tiers
 
@@ -96,7 +98,7 @@ def _create_leaderboard():
         itertools.chain.from_iterable(tiers_by_league)), key=lambda tier: tier['tier_id'], reverse=True)
 
     def extract_name(team):
-        if "character_link" in team["member"][0]:
+        if "member" in team and "character_link" in team["member"][0]:
             battle_tag = team["member"][0]["character_link"]["battle_tag"]
         else:
             return "UNKNOWN"
@@ -114,7 +116,10 @@ def _create_leaderboard():
         return result_data.get("discord_server_nick", result_data.get("discord_display_name", battle_tag))
 
     def extract_race(team):
-        return team["member"][0]["played_race_count"][0]["race"]["en_US"]
+        if "member" in team:
+            return team["member"][0]["played_race_count"][0]["race"]["en_US"]
+        else:
+            return "UNKNOWN"
 
     def extract_percentile(team):
         return 1 - bisect.bisect(all_mmrs, team["rating"]) / len(all_mmrs)
