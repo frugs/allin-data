@@ -24,12 +24,9 @@ _CLAN_IDS = [
 
 _GUESTS = [
     "Tbbdd#6920",
-    "taylorqt#1543",
     "MrLando#1626",
     "eXiled#1678",
     "IMeXiled#1893",
-    "Matlo#1298",
-    "Luneth#11496",
     "Andy#12473"
 ]
 
@@ -113,7 +110,7 @@ def _create_leaderboard():
             return battle_tag
 
         result_data = next(iter(query_result.val().values()))
-        return result_data.get("discord_server_nick", result_data.get("discord_display_name", battle_tag))
+        return result_data.get("discord_display_name", result_data.get("discord_server_nick", battle_tag))
 
     def extract_race(team):
         if "member" in team:
