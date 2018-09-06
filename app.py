@@ -19,7 +19,8 @@ _LEAGUE_COUNT = 7
 
 _CLAN_IDS = [
     369458,
-    40715
+    40715,
+    406747
 ]
 
 _GUESTS = [
