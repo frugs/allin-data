@@ -28,7 +28,8 @@ _GUESTS = [
     "MrLando#1626",
     "eXiled#1678",
     "IMeXiled#1893",
-    "Andy#12473"
+    "Andy#12473",
+    "Sympathy#1701"
 ]
 
 
