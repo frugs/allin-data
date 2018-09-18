@@ -1,6 +1,6 @@
 import setuptools
 
-VERSION = "0.0.2"
+VERSION = "0.0.3"
 
 setuptools.setup(
     name="leaderboarddata",
@@ -13,7 +13,7 @@ setuptools.setup(
     keywords=["sc2", "MMR"],
     classifiers=[],
     install_requires=[
-        "requests-toolbelt>=0.8.0"
+        "requests-toolbelt>=0.8.0",
         "sc2gamedata",
         "retryfallback",
         "pyrebase",
