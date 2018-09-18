@@ -176,9 +176,11 @@ def update_leaderboard():
 
     if (not _is_currently_updating.get_and_set(True)
             and (not _leaderboard_cache or _last_request_time - time.time() < _TIME_THRESHOLD)):
-        _leaderboard_cache = _create_leaderboard()
-        print("cache_updated")
-        _is_currently_updating.get_and_set(False)
+        try:
+            _leaderboard_cache = _create_leaderboard()
+            print("cache_updated")
+        finally:
+            _is_currently_updating.get_and_set(False)
 
     return ""
 
