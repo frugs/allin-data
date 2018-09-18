@@ -1,3 +1,4 @@
+requests-toolbelt>=0.8.0
 sc2gamedata
 retryfallback
 pyrebase

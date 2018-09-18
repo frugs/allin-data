@@ -13,6 +13,7 @@ setuptools.setup(
     keywords=["sc2", "MMR"],
     classifiers=[],
     install_requires=[
+        "requests-toolbelt>=0.8.0"
         "sc2gamedata",
         "retryfallback",
         "pyrebase",
