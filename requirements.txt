@@ -1,5 +1,5 @@
-growler
 sc2gamedata
 retryfallback
 pyrebase
-
+flask
+google-cloud-datastore
