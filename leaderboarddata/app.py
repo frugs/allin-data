@@ -15,10 +15,10 @@ try:
     from google.cloud import datastore
 
     datastore_client = datastore.Client()
-    _CLIENT_ID = datastore_client.get(datastore.key.Key("Config", "battleNetClientId"))
-    _CLIENT_SECRET = datastore_client.get(datastore.key.Key("Config", "battleNetClientSecret"))
+    _CLIENT_ID = datastore_client.get(datastore_client.key("Config", "battleNetClientId"))["value"]
+    _CLIENT_SECRET = datastore_client.get(datastore_client.key("Config", "battleNetClientSecret"))["value"]
     _FIREBASE_CONFIG = json.loads(
-        datastore_client.get(datastore.key.Key("Config", "firebaseConfig")))
+        datastore_client.get(datastore_client.key("Config", "firebaseConfig"))["value"])
 except Exception as err:
     import os
 
