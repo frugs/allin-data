@@ -2,10 +2,9 @@ import bisect
 import functools
 import itertools
 import json
-import multiprocessing
+import multiprocessing.pool
 import threading
 import time
-import gc
 
 import flask
 import pyrebase
@@ -32,6 +31,7 @@ except Exception as err:
 
 _TIME_THRESHOLD = 60
 _LEAGUE_IDS = range(7)
+_THREADS = min(5, len(_LEAGUE_IDS))
 
 _CLAN_IDS = [369458, 40715, 406747]
 
@@ -72,8 +72,6 @@ def _for_each_league(access_token: str, current_season_id: int, league_id: int):
             }
         })
         for division_data in tier_data.get("division", []):
-            gc.collect()
-
             ladder_data = sc2gamedata.get_ladder_data(access_token, division_data["ladder_id"])
             if "team" in ladder_data:
                 for team_data in ladder_data["team"]:
@@ -97,10 +95,9 @@ def _create_leaderboard():
     access_token, _ = sc2gamedata.get_access_token(_CLIENT_ID, _CLIENT_SECRET, "us")
     season_id = sc2gamedata.get_current_season_data(access_token)["id"]
 
-    with multiprocessing.Pool(len(_LEAGUE_IDS)) as p:
+    with multiprocessing.pool.ThreadPool(_THREADS) as p:
         result = p.starmap(
-            functools.partial(_for_each_league, access_token),
-            zip([season_id] * len(_LEAGUE_IDS), _LEAGUE_IDS))
+            functools.partial(_for_each_league, access_token, season_id), _LEAGUE_IDS)
 
     clan_members_by_league, all_mmrs_by_league, tiers_by_league = map(list, zip(*result))
     all_mmrs = sorted(list(itertools.chain.from_iterable(all_mmrs_by_league)))
