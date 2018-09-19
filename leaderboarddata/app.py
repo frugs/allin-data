@@ -16,7 +16,8 @@ try:
 
     datastore_client = datastore.Client()
     _CLIENT_ID = datastore_client.get(datastore_client.key("Config", "battleNetClientId"))["value"]
-    _CLIENT_SECRET = datastore_client.get(datastore_client.key("Config", "battleNetClientSecret"))["value"]
+    _CLIENT_SECRET = datastore_client.get(datastore_client.key("Config",
+                                                               "battleNetClientSecret"))["value"]
     _FIREBASE_CONFIG = json.loads(
         datastore_client.get(datastore_client.key("Config", "firebaseConfig"))["value"])
 except Exception as err:
@@ -62,7 +63,13 @@ def _for_each_league(access_token: str, current_season_id: int, league_id: int):
     league_data = sc2gamedata.get_league_data(access_token, current_season_id, league_id)
     for tier_index, tier_data in enumerate(reversed(league_data["tier"])):
         tier_id = (league_id * 3) + tier_index
-        tiers.append({"tier_id": tier_id, "tier_data": tier_data})
+        tiers.append({
+            "tier_id": tier_id,
+            "tier_data": {
+                "min_rating": tier_data.get("min_rating", 0),
+                "max_rating": tier_data.get("max_rating", 0)
+            }
+        })
         for division_data in tier_data.get("division", []):
             ladder_data = sc2gamedata.get_ladder_data(access_token, division_data["ladder_id"])
             if "team" in ladder_data:
