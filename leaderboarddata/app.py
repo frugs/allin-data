@@ -96,7 +96,7 @@ def _create_leaderboard():
     season_id = sc2gamedata.get_current_season_data(access_token)["id"]
 
     with multiprocessing.pool.ThreadPool(_THREADS) as p:
-        result = p.starmap(
+        result = p.map(
             functools.partial(_for_each_league, access_token, season_id), _LEAGUE_IDS)
 
     clan_members_by_league, all_mmrs_by_league, tiers_by_league = map(list, zip(*result))
