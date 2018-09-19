@@ -5,6 +5,7 @@ import json
 import multiprocessing
 import threading
 import time
+import gc
 
 import flask
 import pyrebase
@@ -71,6 +72,8 @@ def _for_each_league(access_token: str, current_season_id: int, league_id: int):
             }
         })
         for division_data in tier_data.get("division", []):
+            gc.collect()
+
             ladder_data = sc2gamedata.get_ladder_data(access_token, division_data["ladder_id"])
             if "team" in ladder_data:
                 for team_data in ladder_data["team"]:
