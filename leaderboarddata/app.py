@@ -166,7 +166,7 @@ def _create_leaderboard():
 
 _leaderboard_cache = []
 _is_currently_updating = AtomicBoolean(False)
-_last_request_time = time.gmtime(0)
+_last_request_time = 0
 
 
 @app.route("/update")
