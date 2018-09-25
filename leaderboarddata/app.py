@@ -11,23 +11,17 @@ import pyrebase
 import retryfallback
 import sc2gamedata
 
-try:
-    from google.cloud import datastore
+from google.cloud import datastore
 
+
+def retrieve_config_value(key: str) -> str:
     datastore_client = datastore.Client()
-    _CLIENT_ID = datastore_client.get(datastore_client.key("Config", "battleNetClientId"))["value"]
-    _CLIENT_SECRET = datastore_client.get(datastore_client.key("Config",
-                                                               "battleNetClientSecret"))["value"]
-    _FIREBASE_CONFIG = json.loads(
-        datastore_client.get(datastore_client.key("Config", "firebaseConfig"))["value"])
-except Exception as err:
-    import os
+    return datastore_client.get(datastore_client.key("Config", key))["value"]
 
-    print(err)
-    print("Error connecting to config provider. Falling back to local config.")
-    _CLIENT_ID = os.getenv('BATTLE_NET_CLIENT_ID', "")
-    _CLIENT_SECRET = os.getenv('BATTLE_NET_CLIENT_SECRET', "")
-    _FIREBASE_CONFIG = json.loads(os.getenv('FIREBASE_CONFIG', "{}"))
+
+_CLIENT_ID = retrieve_config_value("blizzardClientKey")
+_CLIENT_SECRET = retrieve_config_value("blizzardClientSecret")
+_FIREBASE_CONFIG = json.loads(retrieve_config_value("firebaseConfig"))
 
 _TIME_THRESHOLD = 60
 _LEAGUE_IDS = range(7)
@@ -96,8 +90,7 @@ def _create_leaderboard():
     season_id = sc2gamedata.get_current_season_data(access_token)["id"]
 
     with multiprocessing.pool.ThreadPool(_THREADS) as p:
-        result = p.map(
-            functools.partial(_for_each_league, access_token, season_id), _LEAGUE_IDS)
+        result = p.map(functools.partial(_for_each_league, access_token, season_id), _LEAGUE_IDS)
 
     clan_members_by_league, all_mmrs_by_league, tiers_by_league = map(list, zip(*result))
     all_mmrs = sorted(list(itertools.chain.from_iterable(all_mmrs_by_league)))
