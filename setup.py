@@ -1,6 +1,6 @@
 import setuptools
 
-VERSION = "0.0.9"
+VERSION = "0.0.10"
 
 setuptools.setup(
     name="leaderboarddata",
@@ -16,8 +16,8 @@ setuptools.setup(
         "requests-toolbelt>=0.8.0",
         "sc2gamedata",
         "retryfallback",
-        "pyrebase",
         "flask",
         "google-cloud-datastore",
+        "firebase-admin",
     ],
 )
