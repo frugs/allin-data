@@ -26,7 +26,7 @@ _CLIENT_SECRET = retrieve_config_value("blizzardClientSecret")
 _FIREBASE_CONFIG = json.loads(retrieve_config_value("firebaseConfig"))
 
 _TIME_THRESHOLD = 60
-_LEAGUE_IDS = range(7)
+_LEAGUE_IDS = [5, 6] # range(7)
 _THREADS = min(5, len(_LEAGUE_IDS))
 
 _CLAN_IDS = [369458, 40715, 406747]
@@ -51,6 +51,7 @@ class AtomicBoolean:
 
 app = flask.Flask(__name__)
 
+firebase_admin.initialize_app(options=_FIREBASE_CONFIG)
 
 def _for_each_league(access_token: str, current_season_id: int, league_id: int):
     league_mmrs = []
@@ -84,7 +85,7 @@ def _for_each_league(access_token: str, current_season_id: int, league_id: int):
 
 
 def open_db():
-    return firebase_admin.db.reference("", app=firebase_admin.initialize_app(options=_FIREBASE_CONFIG))
+    return firebase_admin.db.reference("")
 
 
 def _create_leaderboard():
