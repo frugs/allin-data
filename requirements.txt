@@ -1,6 +1,6 @@
 requests-toolbelt>=0.8.0
 sc2gamedata
 retryfallback
-pyrebase
 flask
 google-cloud-datastore
+firebase-admin

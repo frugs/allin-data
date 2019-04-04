@@ -5,11 +5,13 @@ import json
 import multiprocessing.pool
 import threading
 import time
+import urllib.parse
 
 import flask
-import pyrebase
 import retryfallback
 import sc2gamedata
+import firebase_admin
+import firebase_admin.db
 
 from google.cloud import datastore
 
@@ -81,8 +83,8 @@ def _for_each_league(access_token: str, current_season_id: int, league_id: int):
     return clan_teams, league_mmrs, tiers
 
 
-def open_db() -> pyrebase.pyrebase.Database:
-    return pyrebase.initialize_app(_FIREBASE_CONFIG).database()
+def open_db():
+    return firebase_admin.db.reference("", app=firebase_admin.initialize_app(options=_FIREBASE_CONFIG))
 
 
 def _create_leaderboard():
@@ -114,13 +116,12 @@ def _create_leaderboard():
             return battle_tag
 
         query = db.child("members").order_by_child("caseless_battle_tag").equal_to(
-            battle_tag.casefold())
-        query_result = retryfallback.retry_callable(query.get, 10,
-                                                    pyrebase.pyrebase.PyreResponse([], ""))
-        if not query_result.pyres:
+            urllib.parse.quote(battle_tag.casefold()))
+        query_result = retryfallback.retry_callable(query.get, 10, {})
+        if not query_result:
             return battle_tag
 
-        result_data = next(iter(query_result.val().values()))
+        result_data = next(iter(query_result.values()))
         return result_data.get("discord_display_name",
                                result_data.get("discord_server_nick", battle_tag))
 
@@ -179,6 +180,8 @@ def update_leaderboard():
         try:
             _leaderboard_cache = _create_leaderboard()
             print("cache_updated")
+        except Exception as e:
+            print(e)
         finally:
             _is_currently_updating.get_and_set(False)
 
