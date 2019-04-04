@@ -26,7 +26,7 @@ _CLIENT_SECRET = retrieve_config_value("blizzardClientSecret")
 _FIREBASE_CONFIG = json.loads(retrieve_config_value("firebaseConfig"))
 
 _TIME_THRESHOLD = 60
-_LEAGUE_IDS = [5, 6] # range(7)
+_LEAGUE_IDS = range(7)
 _THREADS = min(5, len(_LEAGUE_IDS))
 
 _CLAN_IDS = [369458, 40715, 406747]
