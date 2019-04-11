@@ -91,12 +91,11 @@ def _create_display_name(member_data: dict, character_name: str) -> str:
     return next(iter(name for name in names if name))
 
 
-def _calculate_percentile_for_mmr(mmr: int, mmrs: list) -> str:
-    percentile = 1 - bisect.bisect(mmrs, mmr) / len(mmrs)
-    return "{0:.2f}%".format(percentile * 100)
+def _format_percentile(percentile: float) -> str:
+    return "{0:.2f}%".format(percentile)
 
 
-def _fetch_leaderboard_info_for_member(current_season_id: int, mmrs: list, member_id: str) -> list:
+def _fetch_leaderboard_info_for_member(current_season_id: int, member_id: str) -> list:
     member = _fetch_member(member_id)
     if not member.get("is_full_member", False):
         return []
@@ -123,7 +122,7 @@ def _fetch_leaderboard_info_for_member(current_season_id: int, mmrs: list, membe
             "name": display_name,
             "league": ladder_info.get("league_id", 0),
             "mmr": ladder_info.get("mmr", 0),
-            "percentile": _calculate_percentile_for_mmr(ladder_info.get("mmr", 0), mmrs),
+            "percentile": _format_percentile(ladder_info.get("percentile", 100.0)),
             "race": race,
         } for race, ladder_info in ladder_infos.items()
     ]
@@ -143,24 +142,6 @@ def _fetch_tier_boundaries_for_league(
     ]
 
 
-def _fetch_mmrs_for_division(access_token: str, ladder_id: int) -> list:
-    ladder_data = sc2gamedata.get_ladder_data(access_token, ladder_id)
-    return [team.get("rating") for team in ladder_data.get("team", []) if team.get("rating")]
-
-
-def _fetch_mmrs_for_each_league(access_token: str, current_season_id: int, league_id: int) -> list:
-    league_data = sc2gamedata.get_league_data(access_token, current_season_id, league_id)
-    tiers = league_data.get("tier", [])
-    divisions = [tier.get("division", []) for tier in tiers]
-    flattened_divisions = _flatten(divisions)
-    return _flatten(
-        [
-            _fetch_mmrs_for_division(access_token, division["ladder_id"])
-            for division in flattened_divisions if division.get("ladder_id")
-        ]
-    )
-
-
 def _create_leaderboard():
     access_token, _ = sc2gamedata.get_access_token(_CLIENT_ID, _CLIENT_SECRET, "us")
     season_id = sc2gamedata.get_current_season_data(access_token)["id"]
@@ -168,16 +149,8 @@ def _create_leaderboard():
     members = _fetch_members()
 
     with multiprocessing.pool.ThreadPool(_THREADS) as p:
-        # mmrs = p.map(
-        #     functools.partial(_fetch_mmrs_for_each_league, access_token, season_id), _LEAGUE_IDS
-        # )
-        # flattened_mmrs = _flatten(mmrs)
-        # flattened_mmrs.sort()
-        flattened_mmrs = [0]
-
         leaderboard_infos = p.map(
-            functools.partial(_fetch_leaderboard_info_for_member, season_id, flattened_mmrs),
-            members
+            functools.partial(_fetch_leaderboard_info_for_member, season_id), members
         )
         flattened_leaderboard_infos = _flatten(leaderboard_infos)
         flattened_leaderboard_infos.sort(key=lambda x: x["mmr"], reverse=True)
