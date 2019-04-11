@@ -136,9 +136,9 @@ def _fetch_tier_boundaries_for_league(
     return [
         {
             "type": "boundary",
-            "tier_id": (league_id * 3) + tier_index,
-            "min_rating": tier_data.get("min_rating", 0),
-            "max_rating": tier_data.get("max_rating", 0),
+            "tier": (league_id * 3) + tier_index,
+            "min_mmr": tier_data.get("min_rating", 0),
+            "max_mmr": tier_data.get("max_mmr", 99999),
         } for tier_index, tier_data in enumerate(reversed(league_data.get("tier", [])))
     ]
 
@@ -186,14 +186,14 @@ def _create_leaderboard():
             _LEAGUE_IDS
         )
         flattened_tier_boundaries = _flatten(tier_boundaries)
-        flattened_tier_boundaries.sort(key=lambda x: x["max_rating"], reverse=True)
+        flattened_tier_boundaries.sort(key=lambda x: x["max_mmr"], reverse=True)
 
     # Handle grandmaster league
     result = [flattened_tier_boundaries.pop(0)]
 
     for leaderboard_info in flattened_leaderboard_infos:
         mmr = leaderboard_info["mmr"]
-        while flattened_tier_boundaries and mmr < flattened_tier_boundaries[0]["max_rating"]:
+        while flattened_tier_boundaries and mmr < flattened_tier_boundaries[0]["max_mmr"]:
             result.append(flattened_tier_boundaries.pop(0))
         result.append(leaderboard_info)
 

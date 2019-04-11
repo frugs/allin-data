@@ -1,6 +1,6 @@
 import setuptools
 
-VERSION = "0.0.13"
+VERSION = "0.0.14"
 
 setuptools.setup(
     name="leaderboarddata",
