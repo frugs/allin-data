@@ -168,11 +168,12 @@ def _create_leaderboard():
     members = _fetch_members()
 
     with multiprocessing.pool.ThreadPool(_THREADS) as p:
-        mmrs = p.map(
-            functools.partial(_fetch_mmrs_for_each_league, access_token, season_id), _LEAGUE_IDS
-        )
-        flattened_mmrs = _flatten(mmrs)
-        flattened_mmrs.sort()
+        # mmrs = p.map(
+        #     functools.partial(_fetch_mmrs_for_each_league, access_token, season_id), _LEAGUE_IDS
+        # )
+        # flattened_mmrs = _flatten(mmrs)
+        # flattened_mmrs.sort()
+        flattened_mmrs = [0]
 
         leaderboard_infos = p.map(
             functools.partial(_fetch_leaderboard_info_for_member, season_id, flattened_mmrs),
