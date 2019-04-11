@@ -138,7 +138,7 @@ def _fetch_tier_boundaries_for_league(
             "type": "boundary",
             "tier": (league_id * 3) + tier_index,
             "min_mmr": tier_data.get("min_rating", 0),
-            "max_mmr": tier_data.get("max_mmr", 99999),
+            "max_mmr": tier_data.get("max_rating", 99999),
         } for tier_index, tier_data in enumerate(reversed(league_data.get("tier", [])))
     ]
 
