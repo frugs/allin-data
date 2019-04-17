@@ -56,15 +56,27 @@ def _flatten(l) -> list:
     return list(itertools.chain.from_iterable(l))
 
 
-def _fetch_members() -> list:
+def _fetch_registered_members() -> list:
     ref = firebase_admin.db.reference()
     members = ref.child("members").get(shallow=True)
     return list(members.keys())
 
 
-def _fetch_member(member_id: str) -> dict:
+def _fetch_registered_member(member_id: str) -> dict:
     ref = firebase_admin.db.reference()
     member = ref.child("members").child(member_id).get()
+    return member if member else {}
+
+
+def _fetch_unregistered_members() -> list:
+    ref = firebase_admin.db.reference()
+    members = ref.child("unregistered_members").child("us").get(shallow=True)
+    return list(members.keys())
+
+
+def _fetch_unregistered_member(character_key: str) -> dict:
+    ref = firebase_admin.db.reference()
+    member = ref.child("unregistered_members").child("us").child(character_key).get()
     return member if member else {}
 
 
@@ -96,7 +108,7 @@ def _format_percentile(percentile: float) -> str:
 
 
 def _fetch_leaderboard_info_for_member(current_season_id: int, member_id: str) -> list:
-    member = _fetch_member(member_id)
+    member = _fetch_registered_member(member_id)
     if not member.get("is_full_member", False):
         return []
 
@@ -128,6 +140,30 @@ def _fetch_leaderboard_info_for_member(current_season_id: int, member_id: str) -
     ]
 
 
+def _fetch_leaderboard_info_for_unregistered_member(
+    current_season_id: int, character_key: str
+) -> list:
+    member = _fetch_unregistered_member(character_key)
+
+    battle_tag = member.get("battle_tag", "")
+    character_name = character_key.split("-")[-1]
+
+    ladder_infos = member["ladder_info"][str(current_season_id)]
+
+    display_name = "{} ({})".format(battle_tag, character_name)
+
+    return [
+        {
+            "type": "player",
+            "name": display_name,
+            "league": ladder_info.get("league_id", 0),
+            "mmr": ladder_info.get("mmr", 0),
+            "percentile": _format_percentile(ladder_info.get("percentile", 100.0)),
+            "race": race,
+        } for race, ladder_info in ladder_infos.items()
+    ]
+
+
 def _fetch_tier_boundaries_for_league(
     access_token: str, current_season_id: int, league_id: int
 ) -> list:
@@ -146,14 +182,27 @@ def _create_leaderboard():
     access_token, _ = sc2gamedata.get_access_token(_CLIENT_ID, _CLIENT_SECRET, "us")
     season_id = sc2gamedata.get_current_season_data(access_token)["id"]
 
-    members = _fetch_members()
+    registered_members = _fetch_registered_members()
+    unregistered_members = _fetch_unregistered_members()
 
     with multiprocessing.pool.ThreadPool(_THREADS) as p:
-        leaderboard_infos = p.map(
-            functools.partial(_fetch_leaderboard_info_for_member, season_id), members
+        registered_member_leaderboard_infos = p.map(
+            functools.partial(_fetch_leaderboard_info_for_member, season_id), registered_members
         )
-        flattened_leaderboard_infos = _flatten(leaderboard_infos)
-        flattened_leaderboard_infos.sort(key=lambda x: x["mmr"], reverse=True)
+        flattened_registered_member_leaderboard_infos = _flatten(
+            registered_member_leaderboard_infos
+        )
+
+        unregistered_member_leaderboard_infos = p.map(
+            functools.partial(_fetch_leaderboard_info_for_unregistered_member, season_id),
+            unregistered_members
+        )
+        flattened_unregistered_member_leaderboard_infos = _flatten(
+            unregistered_member_leaderboard_infos
+        )
+
+        leaderboard_infos = flattened_registered_member_leaderboard_infos + flattened_unregistered_member_leaderboard_infos
+        leaderboard_infos.sort(key=lambda x: x["mmr"], reverse=True)
 
         tier_boundaries = p.map(
             functools.partial(_fetch_tier_boundaries_for_league, access_token, season_id),
@@ -165,7 +214,7 @@ def _create_leaderboard():
     # Handle grandmaster league
     result = [flattened_tier_boundaries.pop(0)]
 
-    for leaderboard_info in flattened_leaderboard_infos:
+    for leaderboard_info in leaderboard_infos:
         mmr = leaderboard_info["mmr"]
         while flattened_tier_boundaries and mmr < flattened_tier_boundaries[0]["max_mmr"]:
             result.append(flattened_tier_boundaries.pop(0))
