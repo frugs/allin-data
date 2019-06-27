@@ -148,7 +148,7 @@ def _fetch_leaderboard_info_for_unregistered_member(
     battle_tag = member.get("battle_tag", "")
     character_name = character_key.split("-")[-1]
 
-    ladder_infos = member["ladder_info"][str(current_season_id)]
+    ladder_infos = member.get("ladder_info", {}).get(str(current_season_id), {})
 
     display_name = "{} ({})".format(battle_tag, character_name)
 
