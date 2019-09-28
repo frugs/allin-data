@@ -28,7 +28,12 @@ _THREADS = min(5, len(_LEAGUE_IDS))
 _CLAN_IDS = [369458, 40715, 406747]
 
 _GUESTS = [
-    "Tbbdd#6920", "MrLando#1626", "eXiled#1678", "IMeXiled#1893", "Andy#12473", "Sympathy#1701"
+    "Tbbdd#6920",
+    "MrLando#1626",
+    "eXiled#1678",
+    "IMeXiled#1893",
+    "Andy#12473",
+    "Sympathy#1701",
 ]
 
 _PAGE_SIZE = 500
@@ -43,7 +48,9 @@ def _flatten(l) -> list:
     return list(itertools.chain.from_iterable(l))
 
 
-def _fetch_paginated(ref: firebase_admin.db.Reference, start_after_member_key: str) -> dict:
+def _fetch_paginated(
+    ref: firebase_admin.db.Reference, start_after_member_key: str
+) -> dict:
     query = ref.order_by_key().limit_to_first(_PAGE_SIZE)
     if start_after_member_key:
         query = query.start_at(start_after_member_key)
@@ -54,18 +61,26 @@ def _fetch_paginated(ref: firebase_admin.db.Reference, start_after_member_key: s
     return members
 
 
-def _fetch_registered_members(db: firebase_admin.db.Reference, start_after_member_key: str = None) -> dict:
+def _fetch_registered_members(
+    db: firebase_admin.db.Reference, start_after_member_key: str = None
+) -> dict:
     return _fetch_paginated(db.child("members"), start_after_member_key)
 
 
-def _fetch_unregistered_members(db: firebase_admin.db.Reference, start_after_member_key: str = None) -> dict:
-    return _fetch_paginated(db.child("unregistered_members").child("us"), start_after_member_key)
+def _fetch_unregistered_members(
+    db: firebase_admin.db.Reference, start_after_member_key: str = None
+) -> dict:
+    return _fetch_paginated(
+        db.child("unregistered_members").child("us"), start_after_member_key
+    )
 
 
 def _find_highest_ranked_character(current_season_id: int, characters: dict) -> dict:
     highest_ranked_character = ("", 0)
     for character_key, character in characters.items():
-        ladder_infos = character.get("ladder_info", {}).get(str(current_season_id), {}).values()
+        ladder_infos = (
+            character.get("ladder_info", {}).get(str(current_season_id), {}).values()
+        )
         for ladder_info in ladder_infos:
             mmr = ladder_info.get("mmr", 0)
             if mmr > highest_ranked_character[1]:
@@ -79,7 +94,9 @@ def _create_display_name(member_data: dict, character_name: str) -> str:
         member_data.get("discord_display_name"),
         member_data.get("discord_server_nick"),
         member_data.get("discord_username"),
-        member_data.get("battle_tag"), character_name, "UNKNOWN"
+        member_data.get("battle_tag"),
+        character_name,
+        "UNKNOWN",
     ]
 
     return next(iter(name for name in names if name))
@@ -89,7 +106,9 @@ def _format_percentile(percentile: float) -> str:
     return "{0:.2f}%".format(percentile)
 
 
-def _extract_registered_member_leaderboard_infos(current_season_id: int, member: dict) -> list:
+def _extract_registered_member_leaderboard_infos(
+    current_season_id: int, member: dict
+) -> list:
     if not member.get("is_full_member", False):
         return []
 
@@ -98,7 +117,9 @@ def _extract_registered_member_leaderboard_infos(current_season_id: int, member:
     if not characters:
         return []
 
-    highest_ranked_character = _find_highest_ranked_character(current_season_id, characters)
+    highest_ranked_character = _find_highest_ranked_character(
+        current_season_id, characters
+    )
 
     if not highest_ranked_character:
         return []
@@ -117,7 +138,8 @@ def _extract_registered_member_leaderboard_infos(current_season_id: int, member:
             "mmr": ladder_info.get("mmr", 0),
             "percentile": _format_percentile(ladder_info.get("percentile", 100.0)),
             "race": race,
-        } for race, ladder_info in ladder_infos.items()
+        }
+        for race, ladder_info in ladder_infos.items()
     ]
 
 
@@ -139,12 +161,19 @@ def _extract_unregistered_member_leaderboard_infos(
             "mmr": ladder_info.get("mmr", 0),
             "percentile": _format_percentile(ladder_info.get("percentile", 100.0)),
             "race": race,
-        } for race, ladder_info in ladder_infos.items()
+        }
+        for race, ladder_info in ladder_infos.items()
     ]
 
 
 def _fetch_tier_boundaries(season_id: int) -> list:
-    tier_boundaries_db = firebase_admin.db.reference().child("tier_boundaries").child("us").child(str(season_id)).get()
+    tier_boundaries_db = (
+        firebase_admin.db.reference()
+        .child("tier_boundaries")
+        .child("us")
+        .child(str(season_id))
+        .get()
+    )
     tier_boundaries = list(tier_boundaries_db) if tier_boundaries_db else []
     tier_boundaries.sort(key=lambda x: x["tier"], reverse=True)
     return tier_boundaries
@@ -160,31 +189,44 @@ def _create_leaderboard():
     while registered_members:
         registered_member_leaderboard_infos += map(
             functools.partial(_extract_registered_member_leaderboard_infos, season_id),
-            registered_members.values()
+            registered_members.values(),
         )
         if len(registered_members) < _PAGE_SIZE:
             registered_members = {}
         else:
-            registered_members = _fetch_registered_members(db, next(reversed(registered_members)))
+            registered_members = _fetch_registered_members(
+                db, next(reversed(registered_members))
+            )
 
-    flattened_registered_member_leaderboard_infos = _flatten(registered_member_leaderboard_infos)
+    flattened_registered_member_leaderboard_infos = _flatten(
+        registered_member_leaderboard_infos
+    )
 
     unregistered_members = _fetch_unregistered_members(db)
     unregistered_member_leaderboard_infos = []
     while unregistered_members:
         unregistered_member_leaderboard_infos += map(
-            functools.partial(_extract_unregistered_member_leaderboard_infos, season_id),
+            functools.partial(
+                _extract_unregistered_member_leaderboard_infos, season_id
+            ),
             unregistered_members.keys(),
-            unregistered_members.values()
+            unregistered_members.values(),
         )
         if len(unregistered_members) < _PAGE_SIZE:
             unregistered_members = {}
         else:
-            unregistered_members = _fetch_unregistered_members(db, next(reversed(unregistered_members)))
+            unregistered_members = _fetch_unregistered_members(
+                db, next(reversed(unregistered_members))
+            )
 
-    flattened_unregistered_member_leaderboard_infos = _flatten(unregistered_member_leaderboard_infos)
+    flattened_unregistered_member_leaderboard_infos = _flatten(
+        unregistered_member_leaderboard_infos
+    )
 
-    leaderboard_infos = flattened_registered_member_leaderboard_infos + flattened_unregistered_member_leaderboard_infos
+    leaderboard_infos = (
+        flattened_registered_member_leaderboard_infos
+        + flattened_unregistered_member_leaderboard_infos
+    )
     leaderboard_infos.sort(key=lambda x: x["mmr"], reverse=True)
 
     tier_boundaries = _fetch_tier_boundaries(season_id)
