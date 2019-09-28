@@ -1,8 +1,6 @@
-import bisect
 import functools
 import itertools
 import json
-import multiprocessing.pool
 import threading
 import time
 
@@ -23,7 +21,7 @@ _CLIENT_ID = _retrieve_config_value("blizzardClientKey")
 _CLIENT_SECRET = _retrieve_config_value("blizzardClientSecret")
 _FIREBASE_CONFIG = json.loads(_retrieve_config_value("firebaseConfig"))
 
-_TIME_THRESHOLD = 60
+_TIME_THRESHOLD = 10
 _LEAGUE_IDS = range(7)
 _THREADS = min(5, len(_LEAGUE_IDS))
 
@@ -33,22 +31,11 @@ _GUESTS = [
     "Tbbdd#6920", "MrLando#1626", "eXiled#1678", "IMeXiled#1893", "Andy#12473", "Sympathy#1701"
 ]
 
+_PAGE_SIZE = 500
+_CACHE_EXPIRY = 10 * 60
+_LOCK_TIMEOUT = 60
+
 firebase_admin.initialize_app(options=_FIREBASE_CONFIG)
-
-
-class AtomicBoolean:
-    def __init__(self, initial_value: bool):
-        self.value = initial_value
-        self.lock = threading.Lock()
-
-    def get_and_set(self, value: bool) -> bool:
-        self.lock.acquire()
-        old_value = self.value
-        self.value = value
-        self.lock.release()
-        return old_value
-
-
 app = flask.Flask(__name__)
 
 
@@ -56,28 +43,23 @@ def _flatten(l) -> list:
     return list(itertools.chain.from_iterable(l))
 
 
-def _fetch_registered_members() -> list:
-    ref = firebase_admin.db.reference()
-    members = ref.child("members").get(shallow=True)
-    return list(members.keys())
+def _fetch_paginated(ref: firebase_admin.db.Reference, start_after_member_key: str) -> dict:
+    query = ref.order_by_key().limit_to_first(_PAGE_SIZE)
+    if start_after_member_key:
+        query = query.start_at(start_after_member_key)
+    members = query.get()
+    members = members if members else {}
+    if start_after_member_key:
+        members.pop(start_after_member_key, None)
+    return members
 
 
-def _fetch_registered_member(member_id: str) -> dict:
-    ref = firebase_admin.db.reference()
-    member = ref.child("members").child(member_id).get()
-    return member if member else {}
+def _fetch_registered_members(db: firebase_admin.db.Reference, start_after_member_key: str = None) -> dict:
+    return _fetch_paginated(db.child("members"), start_after_member_key)
 
 
-def _fetch_unregistered_members() -> list:
-    ref = firebase_admin.db.reference()
-    members = ref.child("unregistered_members").child("us").get(shallow=True)
-    return list(members.keys())
-
-
-def _fetch_unregistered_member(character_key: str) -> dict:
-    ref = firebase_admin.db.reference()
-    member = ref.child("unregistered_members").child("us").child(character_key).get()
-    return member if member else {}
+def _fetch_unregistered_members(db: firebase_admin.db.Reference, start_after_member_key: str = None) -> dict:
+    return _fetch_paginated(db.child("unregistered_members").child("us"), start_after_member_key)
 
 
 def _find_highest_ranked_character(current_season_id: int, characters: dict) -> dict:
@@ -107,8 +89,7 @@ def _format_percentile(percentile: float) -> str:
     return "{0:.2f}%".format(percentile)
 
 
-def _fetch_leaderboard_info_for_member(current_season_id: int, member_id: str) -> list:
-    member = _fetch_registered_member(member_id)
+def _extract_registered_member_leaderboard_infos(current_season_id: int, member: dict) -> list:
     if not member.get("is_full_member", False):
         return []
 
@@ -140,11 +121,9 @@ def _fetch_leaderboard_info_for_member(current_season_id: int, member_id: str) -
     ]
 
 
-def _fetch_leaderboard_info_for_unregistered_member(
-    current_season_id: int, character_key: str
+def _extract_unregistered_member_leaderboard_infos(
+    current_season_id: int, character_key: str, member: dict
 ) -> list:
-    member = _fetch_unregistered_member(character_key)
-
     battle_tag = member.get("battle_tag", "")
     character_name = character_key.split("-")[-1]
 
@@ -164,92 +143,84 @@ def _fetch_leaderboard_info_for_unregistered_member(
     ]
 
 
-def _fetch_tier_boundaries_for_league(
-    access_token: str, current_season_id: int, league_id: int
-) -> list:
-    league_data = sc2gamedata.get_league_data(access_token, current_season_id, league_id)
-    return [
-        {
-            "type": "boundary",
-            "tier": (league_id * 3) + tier_index,
-            "min_mmr": tier_data.get("min_rating", 0),
-            "max_mmr": tier_data.get("max_rating", 99999),
-        } for tier_index, tier_data in enumerate(reversed(league_data.get("tier", [])))
-    ]
+def _fetch_tier_boundaries(season_id: int) -> list:
+    tier_boundaries_db = firebase_admin.db.reference().child("tier_boundaries").child("us").child(str(season_id)).get()
+    tier_boundaries = list(tier_boundaries_db) if tier_boundaries_db else []
+    tier_boundaries.sort(key=lambda x: x["tier"], reverse=True)
+    return tier_boundaries
 
 
 def _create_leaderboard():
     access_token, _ = sc2gamedata.get_access_token(_CLIENT_ID, _CLIENT_SECRET, "us")
     season_id = sc2gamedata.get_current_season_data(access_token)["id"]
+    db = firebase_admin.db.reference()
 
-    registered_members = _fetch_registered_members()
-    unregistered_members = _fetch_unregistered_members()
+    registered_members = _fetch_registered_members(db)
+    registered_member_leaderboard_infos = []
+    while registered_members:
+        registered_member_leaderboard_infos += map(
+            functools.partial(_extract_registered_member_leaderboard_infos, season_id),
+            registered_members.values()
+        )
+        if len(registered_members) < _PAGE_SIZE:
+            registered_members = {}
+        else:
+            registered_members = _fetch_registered_members(db, next(reversed(registered_members)))
 
-    with multiprocessing.pool.ThreadPool(_THREADS) as p:
-        registered_member_leaderboard_infos = p.map(
-            functools.partial(_fetch_leaderboard_info_for_member, season_id), registered_members
-        )
-        flattened_registered_member_leaderboard_infos = _flatten(
-            registered_member_leaderboard_infos
-        )
+    flattened_registered_member_leaderboard_infos = _flatten(registered_member_leaderboard_infos)
 
-        unregistered_member_leaderboard_infos = p.map(
-            functools.partial(_fetch_leaderboard_info_for_unregistered_member, season_id),
-            unregistered_members
+    unregistered_members = _fetch_unregistered_members(db)
+    unregistered_member_leaderboard_infos = []
+    while unregistered_members:
+        unregistered_member_leaderboard_infos += map(
+            functools.partial(_extract_unregistered_member_leaderboard_infos, season_id),
+            unregistered_members.keys(),
+            unregistered_members.values()
         )
-        flattened_unregistered_member_leaderboard_infos = _flatten(
-            unregistered_member_leaderboard_infos
-        )
+        if len(unregistered_members) < _PAGE_SIZE:
+            unregistered_members = {}
+        else:
+            unregistered_members = _fetch_unregistered_members(db, next(reversed(unregistered_members)))
 
-        leaderboard_infos = flattened_registered_member_leaderboard_infos + flattened_unregistered_member_leaderboard_infos
-        leaderboard_infos.sort(key=lambda x: x["mmr"], reverse=True)
+    flattened_unregistered_member_leaderboard_infos = _flatten(unregistered_member_leaderboard_infos)
 
-        tier_boundaries = p.map(
-            functools.partial(_fetch_tier_boundaries_for_league, access_token, season_id),
-            _LEAGUE_IDS
-        )
-        flattened_tier_boundaries = _flatten(tier_boundaries)
-        flattened_tier_boundaries.sort(key=lambda x: x["max_mmr"], reverse=True)
+    leaderboard_infos = flattened_registered_member_leaderboard_infos + flattened_unregistered_member_leaderboard_infos
+    leaderboard_infos.sort(key=lambda x: x["mmr"], reverse=True)
+
+    tier_boundaries = _fetch_tier_boundaries(season_id)
 
     # Handle grandmaster league
-    result = [flattened_tier_boundaries.pop(0)]
+    result = [tier_boundaries.pop(0)]
 
     for leaderboard_info in leaderboard_infos:
         mmr = leaderboard_info["mmr"]
-        while flattened_tier_boundaries and mmr < flattened_tier_boundaries[0]["max_mmr"]:
-            result.append(flattened_tier_boundaries.pop(0))
+        while tier_boundaries and mmr < tier_boundaries[0]["max_mmr"]:
+            result.append(tier_boundaries.pop(0))
         result.append(leaderboard_info)
 
     return result
 
 
 _leaderboard_cache = []
-_is_currently_updating = AtomicBoolean(False)
-_last_request_time = 0
-
-
-@app.route("/update")
-def update_leaderboard():
-    global _leaderboard_cache
-    global _last_request_time
-
-    if (
-        not _is_currently_updating.get_and_set(True)
-        and (not _leaderboard_cache or _last_request_time - time.time() < _TIME_THRESHOLD)
-    ):
-        try:
-            _leaderboard_cache = _create_leaderboard()
-            print("cache_updated")
-        finally:
-            _is_currently_updating.get_and_set(False)
-
-    return ""
+_last_update_time = 0
+_cache_lock = threading.RLock()
 
 
 @app.route("/")
 def display_leaderboard():
     global _leaderboard_cache
-    global _last_request_time
+    global _last_update_time
+    global _cache_lock
 
-    _last_request_time = time.time()
+    request_time = time.time()
+    if request_time > _last_update_time + _CACHE_EXPIRY:
+        _cache_lock.acquire(timeout=_LOCK_TIMEOUT)
+
+        # An update may have happened while we were waiting for the lock, so check again
+        if request_time > _last_update_time + _CACHE_EXPIRY:
+            _leaderboard_cache = _create_leaderboard()
+            _last_update_time = time.time()
+
+        _cache_lock.release()
+
     return flask.jsonify({"data": _leaderboard_cache})
